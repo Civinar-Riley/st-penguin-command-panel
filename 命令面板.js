@@ -50,7 +50,7 @@
     { cat: '🗂 楼层管理', cmd: '/unhide', desc: '取消隐藏，恢复把该楼层发给 AI', args: '楼号（可留空＝最后一楼）' },
     { cat: '🗂 楼层管理', cmd: '/del', desc: '删除指定楼层层数（危险操作，不可撤回！）', args: '楼层数' },
     { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号' },
-    { cat: '🖥 界面切换', cmd: '/chat-jump', desc: '将聊天视图滚动到指定的消息索引', args: '消息索引（从 0 开始）' },
+    { cat: '🗂 楼层管理', cmd: '/chat-jump', desc: '将聊天视图滚动到指定的消息索引', args: '消息索引（从 0 开始）' },
 
     { cat: '💬 聊天管理', cmd: '/newchat', desc: '新开一个空白聊天', args: null },
     { cat: '💬 聊天管理', cmd: '/getchatname', desc: '查看当前聊天的文件名（结果显示在状态栏）', args: null },
