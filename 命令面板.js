@@ -14,7 +14,7 @@
   'use strict';
 
   /* ---------- 等待环境就绪 ---------- */
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const sleep = ms => 新建 Promise(r => setTimeout(r, ms));
   let waited = 0;
   while (typeof triggerSlash !== 'function'
     || typeof appendInexistentScriptButtons !== 'function'
@@ -28,7 +28,7 @@
   }
 
   function hostDoc() {
-    try { const d = window.parent.document; if (d && d.body) return d; } catch (e) {}
+    try { const d = window.parent.document; if (d && d.内容) return d; } catch (e) {}
     return document;
   }
   function escHtml(s) {
@@ -50,6 +50,7 @@
     { cat: '🗂 楼层管理', cmd: '/unhide', desc: '取消隐藏，恢复把该楼层发给 AI', args: '楼号（可留空＝最后一楼）' },
     { cat: '🗂 楼层管理', cmd: '/del', desc: '删除指定楼层层数（危险操作，不可撤回！）', args: '楼层数' },
     { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号' },
+    { cat: '🖥 界面切换', cmd: '/chat-jump', desc: '将聊天视图滚动到指定的消息索引', args: '消息索引（从 0 开始）' },
 
     { cat: '💬 聊天管理', cmd: '/newchat', desc: '新开一个空白聊天', args: null },
     { cat: '💬 聊天管理', cmd: '/getchatname', desc: '查看当前聊天的文件名（结果显示在状态栏）', args: null },
@@ -66,24 +67,24 @@
 
   /* ---------- 文本格式化（包装后输出到酒馆输入框，不直接发送） ---------- */
   const FORMATS = [
-    { label: '斜体', hint: '*文本*', wrap: t => `*${t}*` },
-    { label: '粗体', hint: '**文本**', wrap: t => `**${t}**` },
-    { label: '粗斜体', hint: '***文本***', wrap: t => `***${t}***` },
-    { label: '下划线', hint: '__文本__', wrap: t => `__${t}__` },
-    { label: '删除线', hint: '~~文本~~', wrap: t => `~~${t}~~` },
-    { label: '行内代码', hint: '`文本`', wrap: t => '`' + t + '`' },
-    { label: '代码块', hint: '```文本```', wrap: t => '\n```\n' + t + '\n```\n' },
-    { label: '引用', hint: '> 文本', wrap: t => `> ${t}` },
-    { label: '大标题', hint: '# 文本', wrap: t => `# ${t}` },
-    { label: '中标题', hint: '## 文本', wrap: t => `## ${t}` },
-    { label: '小标题', hint: '### 文本', wrap: t => `### ${t}` },
-    { label: '超链接', hint: '[文本](网址)', needUrl: true, wrap: (t, u) => `[${t}](${u})` },
-    { label: '图像', hint: '![文本](网址)', needUrl: true, wrap: (t, u) => `![${t}](${u})` },
+    { 标签: '斜体', hint: '*文本*', wrap: t => `*${t}*` },
+    { 标签: '粗体', hint: '**文本**', wrap: t => `**${t}**` },
+    { 标签: '粗斜体', hint: '***文本***', wrap: t => `***${t}***` },
+    { 标签: '下划线', hint: '__文本__', wrap: t => `__${t}__` },
+    { 标签: '删除线', hint: '~~文本~~', wrap: t => `~~${t}~~` },
+    { 标签: '行内代码', hint: '`文本`', wrap: t => '`' + t + '`' },
+    { 标签: '代码块', hint: '```文本```', wrap: t => '\n```\n' + t + '\n```\n' },
+    { 标签: '引用', hint: '> 文本', wrap: t => `> ${t}` },
+    { 标签: '大标题', hint: '# 文本', wrap: t => `# ${t}` },
+    { 标签: '中标题', hint: '## 文本', wrap: t => `## ${t}` },
+    { 标签: '小标题', hint: '### 文本', wrap: t => `### ${t}` },
+    { 标签: '超链接', hint: '[文本](网址)', needUrl: true, wrap: (t, u) => `[${t}](${u})` },
+    { 标签: '图像', hint: '![文本](网址)', needUrl: true, wrap: (t, u) => `![${t}](${u})` },
   ];
 
   /* ---------- 界面 ---------- */
   const doc = hostDoc();
-  ['cmdpanel-entry', 'cmdpanel-entry-fallback', 'cmdpanel-panel', 'cmdpanel-style'].forEach(id => doc.getElementById(id)?.remove());
+  ['cmdpanel-entry', 'cmdpanel-entry-fallback', 'cmdpanel-panel', 'cmdpanel-style'].forEach(id => doc.getElementById(id)?.移除());
 
   const style = doc.createElement('style');
   style.id = 'cmdpanel-style';
