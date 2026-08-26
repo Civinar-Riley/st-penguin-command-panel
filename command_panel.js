@@ -1,5 +1,5 @@
 /* ============================================================
- * 命令面板 v1.0 —— 酒馆助手(JS-Slash-Runner)插件脚本
+ * 命令面板 v1.3 —— 酒馆助手(JS-Slash-Runner)插件脚本
  *
  * 使用方法：
  *   酒馆助手 → 导入本 JSON 或新建脚本粘贴全部内容 → 启用
@@ -9,12 +9,20 @@
  *   把酒馆自带 Slash 命令（/hide、/trigger 等）做成带功能注释的按钮，
  *   点击即执行，不用手打；底部还支持手动输入任意命令运行。
  *   命令通过官方接口 triggerSlash() 执行，与手打完全等效。
+ *
+ * 更新记录：
+ *   v1.3  参数输入框支持 Shift+Enter 换行；
+ *         多行/含特殊字符参数自动加引号转义，防止正文被管道截断；
+ *         /del、/cut 危险命令增加二次确认；
+ *         搜索筛选不再丢失已填参数；拖动改用 Pointer Events 修复监听器泄漏
+ *   v1.2  修复代码标识符损坏；底部命令输入框支持 Shift+Enter 换行
+ *   v1.0  首个版本
  * ============================================================ */
 (async () => {
   'use strict';
 
   /* ---------- 等待环境就绪 ---------- */
-  const sleep = ms => 新建 Promise(r => setTimeout(r, ms));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   let waited = 0;
   while (typeof triggerSlash !== 'function'
     || typeof appendInexistentScriptButtons !== 'function'
@@ -28,11 +36,16 @@
   }
 
   function hostDoc() {
-    try { const d = window.parent.document; if (d && d.内容) return d; } catch (e) {}
+    try { const d = window.parent.document; if (d && d.body) return d; } catch (e) {}
     return document;
   }
   function escHtml(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function quoteArg(v) {
+    return /[\s"|]/.test(v)
+      ? '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+      : v;
   }
 
   /* ---------- 命令定义（args 为 null 表示无需参数） ---------- */
@@ -48,8 +61,8 @@
 
     { cat: '🗂 楼层管理', cmd: '/hide', desc: '隐藏楼层：不发送给 AI，但界面上仍可见（默认最后一楼）', args: '楼号（可留空＝最后一楼）' },
     { cat: '🗂 楼层管理', cmd: '/unhide', desc: '取消隐藏，恢复把该楼层发给 AI', args: '楼号（可留空＝最后一楼）' },
-    { cat: '🗂 楼层管理', cmd: '/del', desc: '删除指定楼层层数（危险操作，不可撤回！）', args: '楼层数' },
-    { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号' },
+    { cat: '🗂 楼层管理', cmd: '/del', desc: '删除指定楼层层数（危险操作，不可撤回！）', args: '楼层数', danger: true },
+    { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号', danger: true },
     { cat: '🗂 楼层管理', cmd: '/chat-jump', desc: '将聊天视图滚动到指定的消息索引', args: '消息索引（从 0 开始）' },
 
     { cat: '💬 聊天管理', cmd: '/newchat', desc: '新开一个空白聊天', args: null },
@@ -67,24 +80,24 @@
 
   /* ---------- 文本格式化（包装后输出到酒馆输入框，不直接发送） ---------- */
   const FORMATS = [
-    { 标签: '斜体', hint: '*文本*', wrap: t => `*${t}*` },
-    { 标签: '粗体', hint: '**文本**', wrap: t => `**${t}**` },
-    { 标签: '粗斜体', hint: '***文本***', wrap: t => `***${t}***` },
-    { 标签: '下划线', hint: '__文本__', wrap: t => `__${t}__` },
-    { 标签: '删除线', hint: '~~文本~~', wrap: t => `~~${t}~~` },
-    { 标签: '行内代码', hint: '`文本`', wrap: t => '`' + t + '`' },
-    { 标签: '代码块', hint: '```文本```', wrap: t => '\n```\n' + t + '\n```\n' },
-    { 标签: '引用', hint: '> 文本', wrap: t => `> ${t}` },
-    { 标签: '大标题', hint: '# 文本', wrap: t => `# ${t}` },
-    { 标签: '中标题', hint: '## 文本', wrap: t => `## ${t}` },
-    { 标签: '小标题', hint: '### 文本', wrap: t => `### ${t}` },
-    { 标签: '超链接', hint: '[文本](网址)', needUrl: true, wrap: (t, u) => `[${t}](${u})` },
-    { 标签: '图像', hint: '![文本](网址)', needUrl: true, wrap: (t, u) => `![${t}](${u})` },
+    { label: '斜体', hint: '*文本*', wrap: t => `*${t}*` },
+    { label: '粗体', hint: '**文本**', wrap: t => `**${t}**` },
+    { label: '粗斜体', hint: '***文本***', wrap: t => `***${t}***` },
+    { label: '下划线', hint: '__文本__', wrap: t => `__${t}__` },
+    { label: '删除线', hint: '~~文本~~', wrap: t => `~~${t}~~` },
+    { label: '行内代码', hint: '`文本`', wrap: t => '`' + t + '`' },
+    { label: '代码块', hint: '```文本```', wrap: t => '\n```\n' + t + '\n```\n' },
+    { label: '引用', hint: '> 文本', wrap: t => `> ${t}` },
+    { label: '大标题', hint: '# 文本', wrap: t => `# ${t}` },
+    { label: '中标题', hint: '## 文本', wrap: t => `## ${t}` },
+    { label: '小标题', hint: '### 文本', wrap: t => `### ${t}` },
+    { label: '超链接', hint: '[文本](网址)', needUrl: true, wrap: (t, u) => `[${t}](${u})` },
+    { label: '图像', hint: '![文本](网址)', needUrl: true, wrap: (t, u) => `![${t}](${u})` },
   ];
 
   /* ---------- 界面 ---------- */
   const doc = hostDoc();
-  ['cmdpanel-entry', 'cmdpanel-entry-fallback', 'cmdpanel-panel', 'cmdpanel-style'].forEach(id => doc.getElementById(id)?.移除());
+  ['cmdpanel-entry', 'cmdpanel-entry-fallback', 'cmdpanel-panel', 'cmdpanel-style'].forEach(id => doc.getElementById(id)?.remove());
 
   const style = doc.createElement('style');
   style.id = 'cmdpanel-style';
@@ -103,6 +116,10 @@
 .cmdp-toolbar input{flex:1;background:#101217;color:#e2dfd7;border:1px solid #282d38;border-radius:5px;padding:6px 10px;
   font-family:inherit;font-size:12.5px;outline:none;box-sizing:border-box}
 .cmdp-toolbar input:focus{border-color:rgba(184,149,106,.35)}
+#cmdp-custom{flex:1;background:#101217;color:#e2dfd7;border:1px solid #282d38;border-radius:5px;padding:6px 10px;
+  font-family:inherit;font-size:12.5px;line-height:1.5;outline:none;box-sizing:border-box;
+  resize:none;min-height:34px;max-height:160px;overflow-y:auto}
+#cmdp-custom:focus{border-color:rgba(184,149,106,.35)}
 .cmdp-body{overflow:auto;padding:10px 14px 14px}
 .cmdp-cat{color:#b8956a;font-family:"Noto Serif SC","Songti SC",serif;font-weight:600;font-size:13px;margin:12px 0 6px;letter-spacing:.5px}
 .cmdp-cat:first-child{margin-top:2px}
@@ -118,6 +135,11 @@
   padding:4px 9px;font-family:inherit;font-size:12px;outline:none;box-sizing:border-box}
 .cmdp-argrow input:focus{border-color:rgba(184,149,106,.35)}
 .cmdp-argrow input::placeholder{color:#5c6170}
+.cmdp-argrow textarea{flex:1;background:#101217;color:#e2dfd7;border:1px solid #282d38;border-radius:5px;
+  padding:4px 9px;font-family:inherit;font-size:12px;line-height:1.5;outline:none;box-sizing:border-box;
+  resize:none;min-height:30px;max-height:140px;overflow-y:auto}
+.cmdp-argrow textarea:focus{border-color:rgba(184,149,106,.35)}
+.cmdp-argrow textarea::placeholder{color:#5c6170}
 #cmdpanel-status{padding:7px 14px;border-top:1px solid #282d38;font-size:12px;min-height:18px;color:#8b90a0;
   max-height:110px;overflow:auto;white-space:pre-wrap;word-break:break-all;flex-shrink:0}
 #cmdpanel-status.ok{color:#6a9b7e}
@@ -140,13 +162,13 @@
   <div id="cmdp-list"></div>
   <div class="cmdp-cat" style="margin-top:14px">✨ 文本格式化（填文本 → 点格式 → 输出到输入框）</div>
   <div class="cmdp-item">
-    <div class="cmdp-argrow"><input id="cmdp-fmt-text" placeholder="要格式化的文本"></div>
+    <div class="cmdp-argrow"><textarea rows="1" id="cmdp-fmt-text" placeholder="要格式化的文本（Shift+Enter 换行）"></textarea></div>
     <div class="cmdp-argrow"><input id="cmdp-fmt-url" placeholder="网址（仅「超链接」「图像」需要）"></div>
     <div class="cmdp-fmtgrid" id="cmdp-fmt-grid"></div>
   </div>
 </div>
 <div class="cmdp-toolbar" style="border-top:1px solid #282d38;border-bottom:none">
-  <input id="cmdp-custom" placeholder='手动输入任意命令，例：/hide 3 或 /send 你好'>
+  <textarea id="cmdp-custom" rows="1" placeholder='手动输入任意命令，例：/hide 3 或 /send 你好（Enter 运行，Shift+Enter 换行）'></textarea>
   <button type="button" class="cmdp-run" id="cmdp-custom-run">▶ 运行</button>
 </div>
 <div id="cmdpanel-status">待命中。点按钮直接执行；带输入框的命令可先填参数。</div>`;
@@ -188,6 +210,10 @@
 
   /* ---------- 渲染命令列表 ---------- */
   function renderList(filter) {
+    const prev = {};
+    elList.querySelectorAll('[data-argfor]').forEach(t => {
+      prev[t.dataset.argfor + '|' + (t.dataset.field || '')] = t.value;
+    });
     const kw = (filter || '').trim().toLowerCase();
     const cats = [];
     const html = [];
@@ -197,11 +223,11 @@
       if (c.args === null && !c.fields) {
         html.push(
           `<div class="cmdp-item"><div class="cmdp-row">` +
-          `<button type="button" class="cmdp-run" data-cmd="${escHtml(c.cmd)}"${c.special ? ` data-special="${escHtml(c.special)}"` : ''}>${escHtml(c.cmd)}</button>` +
+          `<button type="button" class="cmdp-run" data-cmd="${escHtml(c.cmd)}"${c.danger ? ' data-danger="1"' : ''}>${escHtml(c.cmd)}</button>` +
           `<span class="cmdp-desc">${escHtml(c.desc)}</span></div></div>`);
       } else if (c.fields) {
         const inputs = c.fields.map(f =>
-          `<input data-argfor="${escHtml(c.cmd)}" data-field="${escHtml(f.key)}" placeholder="${escHtml(f.ph)}" style="flex:1">`
+          `<textarea rows="1" data-argfor="${escHtml(c.cmd)}" data-field="${escHtml(f.key)}" placeholder="${escHtml(f.ph)}" style="flex:1"></textarea>`
         ).join('');
         html.push(
           `<div class="cmdp-item"><div class="cmdp-row">` +
@@ -213,10 +239,14 @@
           `<div class="cmdp-item"><div class="cmdp-row">` +
           `<button type="button" class="cmdp-run" data-cmd="${escHtml(c.cmd)}" data-hasarg="1">${escHtml(c.cmd)}</button>` +
           `<span class="cmdp-desc">${escHtml(c.desc)}</span></div>` +
-          `<div class="cmdp-argrow"><input data-argfor="${escHtml(c.cmd)}" placeholder="${escHtml(c.args)}"></div></div>`);
+          `<div class="cmdp-argrow"><textarea rows="1" data-argfor="${escHtml(c.cmd)}" placeholder="${escHtml(c.args)}"></textarea></div></div>`);
       }
     });
     elList.innerHTML = html.join('') || '<div class="cmdp-desc" style="text-align:center;padding:16px 0">没有匹配的命令</div>';
+    elList.querySelectorAll('[data-argfor]').forEach(t => {
+      const v = prev[t.dataset.argfor + '|' + (t.dataset.field || '')];
+      if (v) { t.value = v; t.style.height = Math.min(t.scrollHeight, 140) + 'px'; }
+    });
   }
 
   /* 多字段命令：/sendas 改用 createChatMessages 直写接口，绕过 slash 管道（避免正文丢失） */
@@ -225,7 +255,7 @@
     if (!btn) return;
     const cmd = btn.dataset.cmd;
     if (btn.dataset.hasfields) {
-      const inputs = [...elList.querySelectorAll(`input[data-argfor="${CSS.escape(cmd)}"]`)];
+      const inputs = [...elList.querySelectorAll(`[data-argfor="${CSS.escape(cmd)}"]`)];
       const values = {};
       inputs.forEach(inp => values[inp.dataset.field] = inp.value.trim());
       if (!values.name || !values.text) { setStatus('❌ 请把角色名和消息内容都填上再执行', 'err'); return; }
@@ -234,10 +264,11 @@
     }
     let full = cmd;
     if (btn.dataset.hasarg) {
-      const argInput = elList.querySelector(`input[data-argfor="${CSS.escape(cmd)}"]:not([data-field])`);
+      const argInput = elList.querySelector(`[data-argfor="${CSS.escape(cmd)}"]:not([data-field])`);
       const val = (argInput?.value || '').trim();
-      if (val) full = cmd + ' ' + val;
+      if (val) full = cmd + ' ' + quoteArg(val);
     }
+    if (btn.dataset.danger && !confirm(`确认执行 ${cmd}？该操作不可撤回！`)) return;
     runCommand(full);
   });
 
@@ -259,18 +290,38 @@
   }
   elList.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
-    const input = e.target.closest('input[data-argfor]');
-    if (!input) return;
-    const btn = elList.querySelector(`.cmdp-run[data-cmd="${CSS.escape(input.dataset.argfor)}"]`);
+    if (e.shiftKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+    const ta = e.target.closest('textarea[data-argfor]');
+    if (!ta) return;
+    e.preventDefault();
+    const btn = elList.querySelector(`.cmdp-run[data-cmd="${CSS.escape(ta.dataset.argfor)}"]`);
     btn?.click();
+  });
+  elList.addEventListener('input', e => {
+    const ta = e.target.closest('textarea[data-argfor]');
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
   });
   elSearch.addEventListener('input', () => renderList(elSearch.value));
 
   $('cmdp-custom-run').addEventListener('click', () => runCommand(elCustom.value));
-  elCustom.addEventListener('keydown', e => { if (e.key === 'Enter') runCommand(elCustom.value); });
+  elCustom.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+    e.preventDefault();
+    runCommand(elCustom.value);
+  });
+  elCustom.addEventListener('input', () => {
+    elCustom.style.height = 'auto';
+    elCustom.style.height = Math.min(elCustom.scrollHeight, 160) + 'px';
+  });
 
   /* ---------- 文本格式化 ---------- */
   const elFmtText = $('cmdp-fmt-text'), elFmtUrl = $('cmdp-fmt-url'), elFmtGrid = $('cmdp-fmt-grid');
+  elFmtText.addEventListener('input', () => {
+    elFmtText.style.height = 'auto';
+    elFmtText.style.height = Math.min(elFmtText.scrollHeight, 140) + 'px';
+  });
   elFmtGrid.innerHTML = FORMATS.map((f, i) =>
     `<button type="button" data-fi="${i}" title="${escHtml(f.hint)}">${escHtml(f.label)}</button>`
   ).join('');
@@ -283,8 +334,9 @@
       ta.focus();
       setStatus(`✅ 已输出到输入框：\n${text}`, 'ok');
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-      setStatus(`⚠️ 未找到酒馆输入框，已复制到剪贴板：\n${text}`, 'err');
+      navigator.clipboard.writeText(text)
+        .then(() => setStatus(`⚠️ 未找到酒馆输入框，已复制到剪贴板：\n${text}`, 'err'))
+        .catch(err => setStatus(`❌ 复制到剪贴板失败：${err.message}\n已生成：\n${text}`, 'err'));
     } else {
       setStatus(`已生成：\n${text}`, 'ok');
     }
@@ -306,29 +358,29 @@
   }
   panel.querySelector('.cmdp-close').addEventListener('click', () => panel.classList.remove('open'));
 
-  /* ---------- 拖动（标题栏） ---------- */
+  /* ---------- 拖动（标题栏，Pointer Events + 指针捕获，无泄漏） ---------- */
   function makeDraggable(el, handle) {
-    let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
-    handle.addEventListener('mousedown', e => {
+    let sx = 0, sy = 0, ox = 0, oy = 0;
+    handle.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
-      if (e.target.closest && e.target.closest('button,input')) return;
+      if (e.target.closest && e.target.closest('button,input,textarea')) return;
       const r = el.getBoundingClientRect();
       if (r.width > 0 && getComputedStyle(el).right !== 'auto') {
         el.style.left = r.left + 'px'; el.style.top = r.top + 'px';
         el.style.right = 'auto'; el.style.bottom = 'auto';
       }
-      dragging = true; moved = false; sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+      handle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
-    doc.addEventListener('mousemove', e => {
-      if (!dragging) return;
+    handle.addEventListener('pointermove', e => {
+      if (!handle.hasPointerCapture?.(e.pointerId)) return;
       const dx = e.clientX - sx, dy = e.clientY - sy;
-      if (!moved && Math.hypot(dx, dy) < 5) return;
-      moved = true;
       el.style.left = Math.min(Math.max(ox + dx, 0), doc.documentElement.clientWidth - el.offsetWidth) + 'px';
       el.style.top = Math.min(Math.max(oy + dy, 0), doc.documentElement.clientHeight - el.offsetHeight) + 'px';
     });
-    doc.addEventListener('mouseup', () => { dragging = false; });
+    handle.addEventListener('pointercancel', e => handle.releasePointerCapture(e.pointerId));
+    handle.addEventListener('pointerup', e => handle.releasePointerCapture(e.pointerId));
   }
   makeDraggable(panel, panel.querySelector('.cmdp-head'));
 
