@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>命令面板 · CDN 加载器验证</title>
+<style>
+  html,body { margin:0; height:100%; background:#0f1116; color:#ddd;
+    font-family:"Noto Sans SC","Segoe UI","Microsoft YaHei",sans-serif; }
+  #bar { position:fixed; top:0; left:0; right:0; height:36px; background:#1b1e26;
+    border-bottom:1px solid #2b3040; display:flex; align-items:center; gap:6px; padding:0 8px;
+    z-index:3005; font-size:12px; }
+  #scriptbuttons { display:flex; gap:6px; }
+  #scriptbuttons button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256;
+    border-radius:5px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; }
+  #report { position:absolute; top:52px; left:8px; right:8px; background:#0b0d12;
+    border:1px solid #2b3040; border-radius:8px; padding:12px;
+    font-family:Consolas,monospace; font-size:12px; line-height:1.8; color:#8fa0b8; }
+  #report h4 { margin:0 0 8px; color:#b8956a; font-size:13px; }
+  #report .pass { color:#6a9b7e; } #report .fail { color:#c46a5e; } #report .muted { color:#5c6170; }
+  #report a { color:#7aa2f7; }
+</style>
+</head>
+<body>
+<div id="bar"><span style="opacity:.55">☰</span><div id="scriptbuttons"></div></div>
+<div id="report"><h4>CDN 加载器验证</h4><pre id="out">（进行中…）</pre></div>
+
+<script>
+/* ============================================================================
+ * 验证「CDN 加载器」这一个交付物是否真的能用：
+ * 1. 取仓库里的加载器 JSON，读出它唯一那行 content（一行 import）
+ * 2. 照酒馆助手的做法，把它当作 module 脚本执行
+ * 3. 检查面板是否真的从 jsDelivr 拉下来并跑起来了
+ *
+ * 注意：本页依赖网络与 jsDelivr（tag 为不可变缓存、@main 最长约 12 小时缓存），
+ * 因此不适合当作离线自检，需要时手动打开看一眼即可。
+ * ========================================================================== */
+const out = [];
+const write = () => {
+  const el = document.getElementById('out');
+  el.innerHTML = out.map(l => `<span class="${l.k || ''}">${l.t}</span>`).join('\n');
+};
+const say = (t, k) => { out.push({ t, k }); write(); };
+const ok = (t, cond, detail) => say(`${cond ? '✔' : '✘'} ${t}${detail ? '  ' + detail : ''}`, cond ? 'pass' : 'fail');
+
+/* ---- 酒馆助手接口桩（必须在 module 执行前挂好）---- */
+const BUTTONS = [], HANDLERS = [];
+window.appendInexistentScriptButtons = btns => {
+  (btns || []).forEach(b => { if (!BUTTONS.some(x => x.name === b.name)) BUTTONS.push(b); });
+  const bar = document.getElementById('scriptbuttons');
+  bar.innerHTML = '';
+  BUTTONS.forEach(b => {
+    const el = document.createElement('button');
+    el.textContent = b.name;
+    el.addEventListener('click', () => (HANDLERS['event:' + b.name] || []).forEach(fn => fn()));
+    bar.appendChild(el);
+  });
+};
+window.getButtonEvent = n => 'event:' + n;
+window.eventOn = (evt, fn) => { (HANDLERS[evt] = HANDLERS[evt] || []).push(fn); };
+window.triggerSlash = async () => '';
+window.createChatMessages = async () => {};
+
+(async () => {
+  const LOADER = '../酒馆助手脚本-企鹅-酒馆原生命令面板-CDN加载器.json';
+  let loader;
+  try {
+    loader = await (await fetch(LOADER)).json();
+  } catch (e) {
+    say('✘ 读取加载器 JSON 失败：' + e.message, 'fail');
+    return;
+  }
+  const line = (loader.content || '').trim();
+  say(`加载器 name：${loader.name}`, 'muted');
+  say(`唯一一行：${line}`, 'muted');
+
+  ok('加载器内容只有一行 import',
+    line.split('\n').length === 1 && /^import\s+'https:\/\/cdn\.jsdelivr\.net\//.test(line));
+
+  const m = /^import\s+'(https:\/\/[^']+)'/.exec(line);
+  if (!m) { say('✘ 解析不出 CDN 地址，后面的检查跳过', 'fail'); return; }
+  const url = m[1];
+  say(`CDN 地址：<a href="${url}" target="_blank">${url}</a>`, 'muted');
+
+  // 直接从 CDN 取一次，确认可达且确实是本项目的源码
+  let cdnText = '';
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    cdnText = await res.text();
+    ok('CDN 可达', res.ok, `HTTP ${res.status}，${cdnText.length} 字符`);
+  } catch (e) {
+    say('✘ CDN 请求失败（断网 / 被墙 / jsDelivr 故障）：' + e.message, 'fail');
+    say('  这正是加载器版的已知限制——此时请改用自包含版。', 'muted');
+    return;
+  }
+  ok('CDN 上的就是本项目源码', cdnText.includes('命令面板 v') && cdnText.includes('SCRIPT_BUTTON_NAME'),
+    (cdnText.match(/命令面板 v[\d.]+/) || ['未识别版本'])[0]);
+
+  // 照酒馆助手的做法执行：把那一行 import 当 module 脚本跑
+  await new Promise(res => {
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.textContent = line;
+    s.onload = res;
+    s.onerror = () => { say('✘ module 脚本执行失败', 'fail'); res(); };
+    document.head.appendChild(s);
+    setTimeout(res, 6000);
+  });
+  await new Promise(r => setTimeout(r, 1200));   // 等脚本轮询接口、建好界面
+
+  const panel = document.getElementById('cmdpanel-panel');
+  ok('面板已由 CDN 上的代码建起来', !!panel);
+  if (panel) {
+    ok('命令与格式化按钮齐全',
+      panel.querySelectorAll('.cmdp-run').length - 1 === 21 &&
+      panel.querySelectorAll('.cmdp-fmtgrid button').length === 13);
+    ok('危险命令已标记', [...panel.querySelectorAll('[data-danger]')].map(b => b.dataset.cmd).join(' ') === '/del /cut');
+    const head = panel.querySelector('.cmdp-head .sub').textContent;
+    const status = panel.querySelector('#cmdpanel-status').textContent;
+    ok('CDN 上的版本号与仓库一致', /v[\d.]+/.test(head) && /待命中（v[\d.]+）/.test(status),
+      `${head.trim()} / ${status.slice(0, 14)}`);
+  }
+  ok('脚本按钮已注册到按钮栏', BUTTONS.length > 0, BUTTONS.map(b => b.name).join(' '));
+  say('', 'muted');
+  say(out.some(l => l.k === 'fail') ? '存在未通过项' : '全部通过', out.some(l => l.k === 'fail') ? 'fail' : 'pass');
+})();
+</script>
+</body>
+</html>

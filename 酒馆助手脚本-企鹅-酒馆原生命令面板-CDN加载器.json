@@ -1,0 +1,22 @@
+{
+  "type": "script",
+  "enabled": true,
+  "name": "企鹅-酒馆原生命令面板（CDN 加载器）",
+  "id": "7b1f0c93-2d84-4e5a-9f36-c4a8e15d2b70",
+  "content": "import 'https://cdn.jsdelivr.net/gh/Civinar-Riley/st-penguin-command-panel@main/command_panel.js';",
+  "info": "企鹅-酒馆原生命令面板 CDN 加载器：脚本内容只有一行 import，代码实时从 jsDelivr 拉取本仓库 @main 分支（当前 v1.4），仓库更新后无需重新导入（jsDelivr 有最长约 12 小时缓存）。与自包含版二选一导入，不要同时启用两个，否则会出现两个同名脚本按钮。断网或 CDN 不可达时无效，此时请用自包含版。想锁定版本：把 URL 里的 @main 换成具体的 tag（如 @v1.4），代价是 tag 为不可变缓存、不再自动更新。",
+  "button": {
+    "enabled": true,
+    "buttons": [
+      {
+        "name": "🐧企鹅·命令面板",
+        "visible": true
+      }
+    ]
+  },
+  "data": {},
+  "export_with": {
+    "data": false,
+    "button": false
+  }
+}
