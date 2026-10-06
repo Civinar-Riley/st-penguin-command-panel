@@ -30,6 +30,9 @@
 (async () => {
   'use strict';
 
+  /* 版本号的唯一来源：状态栏显示、打包脚本的 info 字段都从这里取 */
+  const VERSION = 'v1.4';
+
   /* ---------- 等待环境就绪 ---------- */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   let waited = 0;
@@ -174,7 +177,8 @@
     padding-bottom:env(safe-area-inset-bottom,0)}
   .cmdp-head{padding:12px 14px;cursor:default}
   .cmdp-head .sub{display:none}
-  .cmdp-close{font-size:22px;min-width:44px;min-height:44px;margin:-8px -10px -8px 0}
+  /* margin 简写会覆盖掉上面的 margin-left:auto，导致 ✕ 掉到标题后面，这里补回来 */
+  .cmdp-close{font-size:22px;min-width:44px;min-height:44px;margin:-8px -10px -8px auto}
   .cmdp-body{padding:8px 12px 12px}
   .cmdp-toolbar{padding:8px 12px}
   .cmdp-item{padding:9px 10px;margin-bottom:8px}
@@ -200,7 +204,7 @@
   const panel = doc.createElement('div');
   panel.id = 'cmdpanel-panel';
   panel.innerHTML = `
-<div class="cmdp-head">🐧企鹅·命令面板 <span class="sub">点击即执行 · 不用手打</span>
+<div class="cmdp-head">🐧企鹅·命令面板 <span class="sub">${VERSION} · 点击即执行</span>
   <button type="button" class="cmdp-close" title="关闭">✕</button></div>
 <div class="cmdp-toolbar"><input id="cmdp-search" placeholder="🔍 输入关键字筛选命令…"></div>
 <div class="cmdp-body">
@@ -216,7 +220,7 @@
   <textarea id="cmdp-custom" rows="1" placeholder='手动输入任意命令，例：/hide 3 或 /send 你好（Enter 运行，Shift+Enter 换行）'></textarea>
   <button type="button" class="cmdp-run" id="cmdp-custom-run">▶ 运行</button>
 </div>
-<div id="cmdpanel-status">待命中。点按钮直接执行；带输入框的命令可先填参数。</div>`;
+<div id="cmdpanel-status">待命中（${VERSION}）。点按钮直接执行；带输入框的命令可先填参数。</div>`;
 
   doc.body.appendChild(panel);
   const $ = id => panel.querySelector('#' + id);
@@ -484,5 +488,5 @@
   eventOn(getButtonEvent(SCRIPT_BUTTON_NAME), togglePanel);
 
   renderList('');
-  setStatus('待命中。点按钮直接执行；带输入框的命令可先填参数。', '');
+  setStatus(`待命中（${VERSION}）。点按钮直接执行；带输入框的命令可先填参数。`, '');
 })().catch(e => console.error('[命令面板] 启动失败：', e));

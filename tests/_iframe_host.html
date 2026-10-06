@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>命令面板 · iframe 拓扑验证台</title>
+<style>
+  :root { --topBarBlockSize: 36px; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#0f1116; color:#ddd;
+    font-family:"Noto Sans SC","Segoe UI","Microsoft YaHei",sans-serif; }
+  #st-topbar { position:fixed; top:0; left:0; right:0; height:var(--topBarBlockSize);
+    background:#1b1e26; border-bottom:1px solid #2b3040; display:flex; align-items:center;
+    gap:6px; padding:0 8px; z-index:3005; font-size:12px; }
+  #st-scriptbuttons { display:flex; gap:6px; flex-wrap:wrap; }
+  #st-scriptbuttons button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256;
+    border-radius:5px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; }
+  #st-chat { position:absolute; top:var(--topBarBlockSize); bottom:110px; left:0; right:0;
+    padding:10px; display:flex; flex-direction:column; gap:10px; }
+  .st-mes { display:flex; gap:10px; background:#1a1f2b; border:1px solid #262c3c;
+    border-radius:8px; padding:10px; }
+  .st-avatar { width:50px; height:50px; border-radius:50%; background:#2d3446; flex:0 0 50px; }
+  .st-text { font-size:13px; color:#cfd3dd; }
+  #st-sendform { position:fixed; left:0; right:0; bottom:0; height:110px; background:#1b1e26;
+    border-top:1px solid #2b3040; padding:10px; display:flex; gap:8px; z-index:3000; }
+  #send_textarea { flex:1; background:#101217; color:#e2dfd7; border:1px solid #333a4c;
+    border-radius:6px; padding:8px 10px; font:inherit; font-size:13px; resize:none; }
+  #st-send { width:64px; background:#b8956a; color:#1a1a1a; border:none; border-radius:6px;
+    font:inherit; font-weight:600; cursor:pointer; }
+  #probe { position:fixed; top:calc(var(--topBarBlockSize) + 6px); right:8px;
+    width:min(400px,46vw); max-height:70vh; overflow:auto; background:#0b0d12cc;
+    border:1px solid #2b3040; border-radius:8px; padding:10px;
+    font-family:Consolas,monospace; font-size:11.5px; line-height:1.65; color:#8fa0b8; z-index:99990; }
+  #probe h4 { margin:0 0 6px; color:#b8956a; font-size:12px; }
+  #probe pre { margin:0 0 10px; white-space:pre-wrap; word-break:break-all; }
+  #probe .pass { color:#6a9b7e; } #probe .fail { color:#c46a5e; } #probe .muted { color:#5c6170; }
+  #probe button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256; border-radius:5px;
+    padding:5px 10px; font:inherit; font-size:11.5px; cursor:pointer; margin-bottom:8px; }
+  /* 脚本真正运行的 iframe：真实拓扑下它是隐藏的，这里留一点可见面积便于观察 */
+  #runner { position:fixed; left:8px; bottom:118px; width:1px; height:1px; border:0; opacity:0; }
+</style>
+</head>
+<body>
+
+<div id="st-topbar"><span style="opacity:.55">☰</span><span style="opacity:.55">≡</span>
+  <div id="st-scriptbuttons"></div></div>
+
+<div id="st-chat">
+  <div class="st-mes"><div class="st-avatar"></div>
+    <div class="st-text">第一楼。面板会被注入到<b>本文档</b>（父页），而不是 iframe 里。</div></div>
+  <div class="st-mes"><div class="st-avatar"></div>
+    <div class="st-text">第二楼，最后一楼。</div></div>
+</div>
+
+<div id="st-sendform">
+  <textarea id="send_textarea" rows="3" placeholder="酒馆输入框（格式化结果会写到这里）"></textarea>
+  <button id="st-send">发送</button>
+</div>
+
+<div id="probe">
+  <button id="probe-run">▶ 跑自检</button>
+  <h4>接口调用记录</h4><pre id="probe-log">（等待脚本加载…）</pre>
+  <h4>酒馆输入框内容</h4><pre id="probe-input">（空）</pre>
+  <h4>自检结果</h4><pre id="probe-check">（尚未运行）</pre>
+</div>
+
+<!-- 被测脚本所在的 iframe：骨架由本页提供，脚本只负责往父文档注入面板 -->
+<iframe id="runner" src="_script_host.html" title="script runner"></iframe>
+
+</body>
+</html>

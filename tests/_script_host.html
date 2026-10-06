@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>命令面板 · 本地验证台</title>
+<style>
+  :root { --topBarBlockSize: 36px; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#0f1116; color:#ddd;
+    font-family:"Noto Sans SC","Segoe UI","Microsoft YaHei",sans-serif; }
+  /* ---- 以下骨架模仿酒馆：顶栏约 36px、聊天列、底部输入区 ---- */
+  #st-topbar { position:fixed; top:0; left:0; right:0; height:var(--topBarBlockSize);
+    background:#1b1e26; border-bottom:1px solid #2b3040; display:flex; align-items:center;
+    gap:6px; padding:0 8px; z-index:3005; font-size:12px; }
+  #st-scriptbuttons { display:flex; gap:6px; flex-wrap:wrap; }
+  #st-scriptbuttons button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256;
+    border-radius:5px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; }
+  #st-chat { position:absolute; top:var(--topBarBlockSize); bottom:110px; left:0; right:0;
+    overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px; }
+  .st-mes { display:flex; gap:10px; background:#1a1f2b; border:1px solid #262c3c;
+    border-radius:8px; padding:10px; }
+  .st-avatar { width:50px; height:50px; border-radius:50%; background:#2d3446; flex:0 0 50px; }
+  .st-name { color:#b8956a; font-size:13px; margin-bottom:4px; }
+  .st-text { font-size:13px; color:#cfd3dd; }
+  #st-sendform { position:fixed; left:0; right:0; bottom:0; height:110px; background:#1b1e26;
+    border-top:1px solid #2b3040; padding:10px; display:flex; gap:8px; z-index:3000; }
+  #send_textarea { flex:1; background:#101217; color:#e2dfd7; border:1px solid #333a4c;
+    border-radius:6px; padding:8px 10px; font:inherit; font-size:13px; resize:none; }
+  #st-send { width:64px; background:#b8956a; color:#1a1a1a; border:none; border-radius:6px;
+    font:inherit; font-weight:600; cursor:pointer; }
+  /* ---- 验证台自己的面板（渲染在宿主文档里，与命令面板同一层）---- */
+  #probe { position:fixed; top:calc(var(--topBarBlockSize) + 6px); right:8px;
+    width:min(400px,46vw); max-height:70vh; overflow:auto; background:#0b0d12cc;
+    border:1px solid #2b3040; border-radius:8px; padding:10px;
+    font-family:Consolas,monospace; font-size:11.5px; line-height:1.65; color:#8fa0b8; z-index:99990; }
+  #probe h4 { margin:0 0 6px; color:#b8956a; font-size:12px; }
+  #probe pre { margin:0 0 10px; white-space:pre-wrap; word-break:break-all; }
+  #probe .pass { color:#6a9b7e; } #probe .fail { color:#c46a5e; } #probe .muted { color:#5c6170; }
+  #probe button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256; border-radius:5px;
+    padding:5px 10px; font:inherit; font-size:11.5px; cursor:pointer; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<script>
+/* ============================================================================
+ * 命令面板本地验证台
+ *
+ * 不启动酒馆、不装酒馆助手，用桩函数冒充它的接口，把面板跑起来并自检。
+ * 两种用法：
+ *   1) 直接打开本页 —— 页面自己搭一套酒馆式骨架（顶栏 / 聊天列 / 底部输入框）
+ *   2) 由 _iframe_host.html 以 iframe 方式载入 —— 骨架由父页提供，
+ *      脚本仍从 iframe 里往 window.parent.document 注入面板，还原真实拓扑
+ *
+ * 注意：酒馆助手接口桩必须挂在本页（脚本所在 realm）的 window 上，
+ * 而界面与日志要写进宿主文档，两者在 iframe 模式下不是同一个 document。
+ * ========================================================================== */
+(async () => {
+  const hostDoc = (() => { try { const d = window.parent.document; if (d && d.body) return d; } catch (e) {} return document; })();
+  const inIframe = hostDoc !== document;
+
+  /* ---------- 1. 宿主没有酒馆式骨架时补一个 ---------- */
+  if (!hostDoc.getElementById('send_textarea')) {
+    const wrap = hostDoc.createElement('div');
+    wrap.innerHTML = `
+      <div id="st-topbar"><span style="opacity:.55">☰</span><span style="opacity:.55">≡</span>
+        <div id="st-scriptbuttons"></div></div>
+      <div id="st-chat">
+        <div class="st-mes"><div class="st-avatar"></div><div>
+          <div class="st-name">测试角色</div>
+          <div class="st-text">第一楼。<code>/hide</code> 留空即隐藏最后一楼。</div></div></div>
+        <div class="st-mes"><div class="st-avatar"></div><div>
+          <div class="st-name">测试角色</div>
+          <div class="st-text">第二楼，最后一楼。</div></div></div>
+      </div>
+      <div id="st-sendform">
+        <textarea id="send_textarea" rows="3" placeholder="酒馆输入框（格式化结果会写到这里）"></textarea>
+        <button id="st-send">发送</button>
+      </div>
+      <div id="probe">
+        <button id="probe-run">▶ 跑自检</button>
+        <h4>接口调用记录</h4><pre id="probe-log">（等待脚本加载…）</pre>
+        <h4>酒馆输入框内容</h4><pre id="probe-input">（空）</pre>
+        <h4>自检结果</h4><pre id="probe-check">（尚未运行）</pre>
+      </div>`;
+    while (wrap.firstChild) hostDoc.body.appendChild(wrap.firstChild);
+  }
+
+  const $ = id => hostDoc.getElementById(id);
+  const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+  /* ---------- 2. 酒馆助手（JS-Slash-Runner）接口桩 ---------- */
+  const LOG = [];
+  function log(text, kind) {
+    LOG.push({ text, kind });
+    const el = $('probe-log');
+    if (el) el.innerHTML = LOG.map(e => `<span class="${e.kind || ''}">${esc(e.text)}</span>`).join('\n');
+  }
+
+  const BUTTONS = [];
+  const HANDLERS = {};
+  window.appendInexistentScriptButtons = btns => {
+    (btns || []).forEach(b => { if (!BUTTONS.some(x => x.name === b.name)) BUTTONS.push(b); });
+    const bar = $('st-scriptbuttons');
+    if (!bar) return;
+    bar.innerHTML = '';
+    BUTTONS.forEach(b => {
+      const el = hostDoc.createElement('button');
+      el.textContent = b.visible === false ? '（隐藏）' + b.name : b.name;
+      el.dataset.name = b.name;
+      el.addEventListener('click', () => fireButton(b.name));
+      bar.appendChild(el);
+    });
+    log(`appendInexistentScriptButtons → ${BUTTONS.length} 个按钮`, 'muted');
+  };
+  window.getButtonEvent = name => 'event:' + name;
+  window.eventOn = (evt, fn) => { (HANDLERS[evt] = HANDLERS[evt] || []).push(fn); };
+  function fireButton(name) {
+    const hs = HANDLERS['event:' + name] || [];
+    log(`[点击按钮] ${name} → ${hs.length} 个处理器`, 'cmd');
+    hs.forEach(fn => fn());
+  }
+  window.triggerSlash = async cmd => {
+    log(`triggerSlash(${JSON.stringify(cmd)})`, 'cmd');
+    await new Promise(r => setTimeout(r, 30));
+    return '';                       // 酒馆多数命令没有返回值
+  };
+  window.createChatMessages = async msgs => {
+    log(`createChatMessages(${JSON.stringify(msgs)})`, 'cmd');
+    await new Promise(r => setTimeout(r, 30));
+  };
+
+  // 供自检使用
+  const probe = {
+    LOG, BUTTONS, HANDLERS, hostDoc, inIframe,
+    clear: () => { LOG.length = 0; log('（日志已清空）', 'muted'); },
+    slash: () => LOG.filter(l => l.text.startsWith('triggerSlash')).map(l => l.text),
+    btn: cmd => [...hostDoc.querySelectorAll('#cmdpanel-panel .cmdp-run')].find(b => b.dataset.cmd === cmd),
+  };
+  window.__probe = probe;
+  log('酒馆助手接口桩已就绪' + (inIframe ? '（iframe 模式：面板将注入父页）' : '（单页模式）'), 'muted');
+
+  /* ---------- 3. 载入被测脚本 ---------- */
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = '../command_panel.js';
+    s.onload = res;
+    s.onerror = () => rej(new Error('载入 ../command_panel.js 失败'));
+    document.head.appendChild(s);
+  });
+  await new Promise(r => setTimeout(r, 900));   // 等脚本轮询接口并建好界面
+
+  /* ---------- 4. 自检 ---------- */
+  const ta = $('send_textarea');
+  if (ta) {
+    ta.addEventListener('input', () => { const m = $('probe-input'); if (m) m.textContent = ta.value || '（空）'; });
+  }
+
+  window.__runSelfCheck = async function () {
+    const out = [];
+    const add = (name, pass, detail) => out.push({ name, pass, detail: detail === undefined ? '' : String(detail) });
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const panel = hostDoc.getElementById('cmdpanel-panel');
+
+    if (!panel) {
+      add('面板已注入宿主文档', false, '找不到 #cmdpanel-panel');
+      return out;
+    }
+    add('面板已注入宿主文档', true, inIframe ? '注入父文档（真实拓扑）' : '单页');
+    // 状态栏稍后会被执行结果覆盖，先把初始文案抓下来
+    const initialStatus = panel.querySelector('#cmdpanel-status').textContent;
+    const headSub = panel.querySelector('.cmdp-head .sub').textContent;
+    panel.classList.add('open');
+    await wait(120);
+
+    add('版本号来自 VERSION 常量', /v[\d.]+/.test(headSub) && /待命中（v[\d.]+）/.test(initialStatus),
+      `${headSub.trim()} / ${initialStatus.slice(0, 16)}`);
+
+    const cs = getComputedStyle(panel);
+    const rect = panel.getBoundingClientRect();
+    const vw = hostDoc.documentElement.clientWidth;
+    const narrow = vw <= 600;
+
+    add('命令数量为 21', panel.querySelectorAll('.cmdp-run').length - 1 === 21,
+      panel.querySelectorAll('.cmdp-run').length - 1 + ' 条');
+    add('格式化按钮为 13', panel.querySelectorAll('.cmdp-fmtgrid button').length === 13,
+      panel.querySelectorAll('.cmdp-fmtgrid button').length + ' 个');
+    add('危险命令已标记', ['/del', '/cut'].every(c =>
+      [...panel.querySelectorAll('[data-danger]')].some(b => b.dataset.cmd === c)),
+      [...panel.querySelectorAll('[data-danger]')].map(b => b.dataset.cmd).join(' '));
+
+    // 布局：窄屏贴边全宽 / 宽屏 480px 右上角
+    if (narrow) {
+      add('窄屏：面板贴边全宽', Math.round(rect.width) >= vw - 20 && Math.round(rect.left) <= 10,
+        `宽 ${Math.round(rect.width)} / 视口 ${vw}，左 ${Math.round(rect.left)}`);
+      add('窄屏：点击目标 ≥40px',
+        Math.round(probe.btn('/trigger').getBoundingClientRect().height) >= 40 &&
+        Math.round(panel.querySelector('.cmdp-fmtgrid button').getBoundingClientRect().height) >= 40);
+      add('窄屏：输入框字号 16px（防 iOS 缩放）',
+        getComputedStyle(panel.querySelector('#cmdp-search')).fontSize === '16px',
+        getComputedStyle(panel.querySelector('#cmdp-search')).fontSize);
+      add('窄屏：格式化格 3 列',
+        getComputedStyle(panel.querySelector('.cmdp-fmtgrid')).gridTemplateColumns.split(' ').length === 3);
+      add('窄屏：下方仍留出输入区', rect.bottom < $('st-sendform').getBoundingClientRect().top,
+        `面板底 ${Math.round(rect.bottom)} < 输入区顶 ${Math.round($('st-sendform').getBoundingClientRect().top)}`);
+    } else {
+      add('宽屏：480px 右上角', Math.round(rect.width) === 480 && rect.right <= vw && rect.top > 0,
+        `宽 ${Math.round(rect.width)}，上 ${Math.round(rect.top)}`);
+      add('宽屏：格式化格 4 列',
+        getComputedStyle(panel.querySelector('.cmdp-fmtgrid')).gridTemplateColumns.split(' ').length === 4);
+    }
+    add('面板高度跟随可视视口', cs.maxHeight.includes('px') && panel.style.getPropertyValue('--cmdp-vvh') !== '',
+      `--cmdp-vvh = ${panel.style.getPropertyValue('--cmdp-vvh') || '未设置'}`);
+    add('面板无横向溢出', [...panel.querySelectorAll('*')]
+      .filter(e => e.getBoundingClientRect().right > rect.right + 0.5).length === 0);
+    // 窄屏那条 CSS 用 margin 简写覆盖过 margin-left:auto，✕ 会掉到标题后面，单独盯一下
+    const closeR = panel.querySelector('.cmdp-close').getBoundingClientRect().right;
+    add('关闭按钮贴在标题栏右侧', closeR > rect.right - 60 && closeR <= rect.right + 1,
+      `✕ 右缘 ${Math.round(closeR)} / 面板右缘 ${Math.round(rect.right)}`);
+
+    // 行为
+    probe.clear(); probe.btn('/trigger').click(); await wait(160);
+    add('无参命令执行', probe.slash()[0] === 'triggerSlash("/trigger")', probe.slash()[0]);
+
+    probe.clear();
+    panel.querySelector('[data-argfor="/hide"]').value = '3';
+    probe.btn('/hide').click(); await wait(160);
+    add('带参命令拼接参数', probe.slash()[0] === 'triggerSlash("/hide 3")', probe.slash()[0]);
+
+    probe.clear();
+    panel.querySelector('[data-argfor="/echo"]').value = 'hello world';
+    probe.btn('/echo').click(); await wait(160);
+    add('含空格参数自动加引号', probe.slash()[0] === 'triggerSlash("/echo \\"hello world\\"")', probe.slash()[0]);
+
+    probe.clear();
+    panel.querySelector('[data-argfor="/sendas"][data-field="name"]').value = '爱丽丝';
+    panel.querySelector('[data-argfor="/sendas"][data-field="text"]').value = '你好';
+    probe.btn('/sendas').click(); await wait(160);
+    add('/sendas 走 createChatMessages 直写',
+      LOG.some(l => l.text.startsWith('createChatMessages') && l.text.includes('爱丽丝')));
+
+    const realConfirm = window.confirm;
+    const asked = [];
+    window.confirm = m => { asked.push(m); return false; };
+    probe.clear();
+    panel.querySelector('[data-argfor="/del"]').value = '2';
+    probe.btn('/del').click(); await wait(160);
+    add('危险命令拒绝时不执行', asked.length === 1 && probe.slash().length === 0,
+      `弹窗 ${asked.length} 次，执行 ${probe.slash().length} 次`);
+    window.confirm = m => { asked.push(m); return true; };
+    probe.clear(); probe.btn('/del').click(); await wait(200);
+    add('危险命令确认后带参数执行', probe.slash()[0] === 'triggerSlash("/del 2")', probe.slash()[0]);
+    window.confirm = realConfirm;
+
+    if (ta) {
+      ta.value = '';
+      panel.querySelector('#cmdp-fmt-text').value = '重点';
+      panel.querySelector('#cmdp-fmt-text').dispatchEvent(new Event('input', { bubbles: true }));
+      panel.querySelector('.cmdp-fmtgrid button[data-fi="1"]').click();
+      add('格式化写入酒馆输入框且不直接发送', ta.value === '**重点**', JSON.stringify(ta.value));
+    }
+
+    const search = panel.querySelector('#cmdp-search');
+    search.value = '/hide'; search.dispatchEvent(new Event('input', { bubbles: true }));
+    const filtered = panel.querySelectorAll('.cmdp-run').length - 1;
+    search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true }));
+    add('搜索筛选生效且可还原', filtered === 1 && panel.querySelectorAll('.cmdp-run').length - 1 === 21,
+      `筛后 ${filtered} 条，还原 ${panel.querySelectorAll('.cmdp-run').length - 1} 条`);
+    add('脚本按钮已注册', Object.keys(HANDLERS).some(k => k.startsWith('event:')));
+
+    panel.classList.remove('open');
+    return out;
+  };
+
+  async function render(results) {
+    const pass = results.filter(r => r.pass).length;
+    $('probe-check').innerHTML =
+      results.map(r => `<span class="${r.pass ? 'pass' : 'fail'}">${r.pass ? '✔' : '✘'} ${esc(r.name)}` +
+        (r.detail ? `  <span class="muted">${esc(r.detail)}</span>` : '') + '</span>').join('\n') +
+      `\n\n<span class="${pass === results.length ? 'pass' : 'fail'}">${pass}/${results.length} 通过</span>`;
+  }
+  $('probe-run').addEventListener('click', async () => {
+    $('probe-check').textContent = '运行中…';
+    render(await window.__runSelfCheck());
+  });
+  render(await window.__runSelfCheck());
+
+  // iframe 模式下父页会等这个标记
+  window.__harnessReady = true;
+})().catch(e => {
+  const box = document.getElementById('probe-check');
+  if (box) box.textContent = '验证台自身出错：' + e.message;
+  console.error('[验证台]', e);
+});
+</script>
+</body>
+</html>
