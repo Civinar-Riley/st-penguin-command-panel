@@ -10,22 +10,31 @@
 python -m http.server 8791
 ```
 
-- **单页模式**：打开 <http://127.0.0.1:8791/tests/_script_host.html>
+- **单页模式**：打开 <http://127.0.0.1:8791/tests/index.html>
   页面自己搭一套酒馆式骨架（顶栏 36px / 聊天列 / 底部输入框），脚本直接跑在本页。
-- **iframe 模式**：打开 <http://127.0.0.1:8791/tests/_iframe_host.html>
-  骨架由父页提供，脚本在 iframe 里执行、面板注入 `window.parent.document`——
+- **iframe 模式**：打开 <http://127.0.0.1:8791/tests/index.html?mode=iframe>
+  骨架由父页提供，脚本在隐藏 iframe 里执行、面板注入 `window.parent.document`——
   这是酒馆助手里的真实拓扑，用来抓「该用宿主 document 却写成 `document`」这类跨文档错误。
   两种模式下自检项相同，结果都会打印在页面右侧的验证台面板里。
-- **CDN 加载器验证**：打开 <http://127.0.0.1:8791/tests/_cdn_loader.html>
+- **CDN 加载器验证**：打开 <http://127.0.0.1:8791/tests/cdn.html>
   取仓库里的 `...-CDN加载器.json`，把它唯一那行 `import` 当 module 脚本执行，
   确认面板真的能从 jsDelivr 上拉下来跑起来。**这一页依赖网络**，与上面两页不同，
-  不适合当离线自检，需要检查发布链路时手动看一眼。
+  不适合当离线自检，需要检查发布链路时手动看一眼。本页刻意不依赖 `harness.js`——
+  它验证的是发布链路，桩函数独立内置。
 
 页面加载后会自动跑一遍自检，也可以随时点「▶ 跑自检」重跑。
 
+## 文件
+
+| 文件 | 作用 |
+| :--- | :--- |
+| `harness.js` | 骨架 + 接口桩 + 自检，三种拓扑共用；按 `?mode=` 分流 |
+| `index.html` | 入口页：直接打开为单页模式，`?mode=iframe` 生成 runner iframe |
+| `cdn.html` | 发布链路验证（jsDelivr → 面板），独立于 harness.js |
+
 ## 自检覆盖
 
-**布局**（按当前视口自动切换窄屏 / 宽屏两组断言）
+**布局**（按当前视口自动切换窄屏 / 宽屏两组断言；窄屏 23 项、宽屏 20 项）
 
 | 视口 | 断言 |
 | :--- | :--- |
@@ -43,6 +52,7 @@ python -m http.server 8791
 | 无参命令 | `triggerSlash("/trigger")` |
 | 带参命令 | `triggerSlash("/hide 3")` |
 | 含空格参数 | 自动加引号：`triggerSlash("/echo \"hello world\"")` |
+| 反斜杠 | 不被翻倍：`triggerSlash("/echo \"a\\b c\"")` |
 | `/sendas` | 走 `createChatMessages` 直写，不经命令行管道 |
 | 危险命令 | 确认框拒绝 → 不执行；确认 → 带参数执行 |
 | 文本格式化 | 结果写进 `#send_textarea`，且不触发发送 |
@@ -68,5 +78,6 @@ python -m http.server 8791
 - 桩会把自己收到的每次调用打印到「接口调用记录」，对着日志看脚本实际发了什么命令最省事。
 - 本页只是近似酒馆的真实环境，酒馆专属的其余 API 在页面里不存在；脚本对接口缺失已有 15 秒轮询与 `catch` 兜底。
 - 这里不断言拖动：拖动依赖真实指针输入，用浏览器手动拖标题栏验证（WebView 兜底路径需把 `window.PointerEvent` 置空后重载脚本）。
-- `_cdn_loader.html` 是唯一需要联网的一页；它验证的是发布链路（jsDelivr → 面板），
+- `cdn.html` 是唯一需要联网的一页；它验证的是发布链路（jsDelivr → 面板），
   而前两页验证的是源码行为，两者互补。
+- 后台标签页里定时器会被浏览器节流、视口在布局完成前可能是 0，验证台会先等视口有尺寸再跑断言。
