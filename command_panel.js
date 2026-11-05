@@ -1,5 +1,5 @@
 /* ============================================================
- * 命令面板 v1.4 —— 酒馆助手(JS-Slash-Runner)插件脚本
+ * 命令面板 v1.5 —— 酒馆助手(JS-Slash-Runner)插件脚本
  *
  * 使用方法：
  *   酒馆助手 → 导入本 JSON 或新建脚本粘贴全部内容 → 启用
@@ -11,6 +11,13 @@
  *   命令通过官方接口 triggerSlash() 执行，与手打完全等效。
  *
  * 更新记录：
+ *   v1.5  修复 /swipe 参数框：酒馆的 /swipe 没有位置参数，原先填的「补充提示
+ *         词」一直被静默忽略，改为无需参数，并修正描述（出新版本是右划不是左划）；
+ *         修复 quoteArg 把反斜杠翻倍（loosey 解析下 \\ 不折叠，路径类正文被弄脏），
+ *         现在只转义双引号、反斜杠原样保留，结尾反斜杠补空格防吞收尾引号；
+ *         修复脚本重跑时宿主页面上监听叠加：可视视口同步与拖动兜底监听先摘旧
+ *         再挂新；/del、/cut 二次确认框显示完整命令（原来只显示命令名）；
+ *         /del 文案明确「删除最后 N 楼」，/cut 标注支持区间，/single 措辞修正
  *   v1.4  修复 /del、/cut 的二次确认从未生效：危险标记只写在无参分支，
  *         而这两条命令带参数、走的是带参分支，导致确认框根本不弹（本次修复）；
  *         移动端适配：窄屏（≤600px）改为贴边全宽布局，避让顶栏并给底部
@@ -31,7 +38,7 @@
   'use strict';
 
   /* 版本号的唯一来源：状态栏显示、打包脚本的 info 字段都从这里取 */
-  const VERSION = 'v1.4';
+  const VERSION = 'v1.5';
 
   /* ---------- 等待环境就绪 ---------- */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -59,10 +66,12 @@
   function escHtml(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  /* ST 的命令解析是 loosey 模式：反斜杠不折叠、\ 只在紧跟符号时才转义，
+     所以这里只把 " 转成 \"，反斜杠原样保留（翻倍会弄脏路径之类正文）；
+     例外是正文以 \ 结尾会吞掉收尾引号，补一个空格规避 */
   function quoteArg(v) {
-    return /[\s"|]/.test(v)
-      ? '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
-      : v;
+    if (!/[\s"|]/.test(v)) return v;
+    return '"' + v.replace(/"/g, '\\"') + (v.endsWith('\\') ? ' ' : '') + '"';
   }
 
   /* ---------- 命令定义（args 为 null 表示无需参数） ---------- */
@@ -70,7 +79,8 @@
     { cat: '🚀 生成与发言', cmd: '/trigger', desc: '立即触发一次 AI 回复', args: null },
     { cat: '🚀 生成与发言', cmd: '/continue', desc: '让 AI 从最后一条消息继续往下写', args: null },
     { cat: '🚀 生成与发言', cmd: '/impersonate', desc: 'AI 以你的口吻代写一条发言，写入输入框供你确认', args: null },
-    { cat: '🚀 生成与发言', cmd: '/swipe', desc: '给最后的 AI 回复换一个新版本（等同左划）', args: '补充提示词（可留空）' },
+    /* /swipe 没有位置参数（只有 direction= 命名参数），塞文本会被酒馆静默忽略 */
+    { cat: '🚀 生成与发言', cmd: '/swipe', desc: '给最后的 AI 回复换一个新版本（等同点右箭头）', args: null },
     { cat: '🚀 生成与发言', cmd: '/send', desc: '以你的身份追加一条消息（不会触发回复）', args: '消息内容' },
     { cat: '🚀 生成与发言', cmd: '/sendas', desc: '以指定角色的身份追加一条消息',
       fields: [{ key: 'name', ph: '角色名' }, { key: 'text', ph: '消息内容' }] },
@@ -78,8 +88,8 @@
 
     { cat: '🗂 楼层管理', cmd: '/hide', desc: '隐藏楼层：不发送给 AI，但界面上仍可见（默认最后一楼）', args: '楼号（可留空＝最后一楼）' },
     { cat: '🗂 楼层管理', cmd: '/unhide', desc: '取消隐藏，恢复把该楼层发给 AI', args: '楼号（可留空＝最后一楼）' },
-    { cat: '🗂 楼层管理', cmd: '/del', desc: '删除指定楼层层数（危险操作，不可撤回！）', args: '楼层数', danger: true },
-    { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号', danger: true },
+    { cat: '🗂 楼层管理', cmd: '/del', desc: '删除最后 N 楼（N 是数量，不是楼号；危险操作，不可撤回！）', args: '要删除的楼层数 N', danger: true },
+    { cat: '🗂 楼层管理', cmd: '/cut', desc: '剪切掉指定楼层并使其后楼层上移（危险操作！）', args: '楼号或区间（如 3-5）', danger: true },
     { cat: '🗂 楼层管理', cmd: '/chat-jump', desc: '将聊天视图滚动到指定的消息索引', args: '消息索引（从 0 开始）' },
 
     { cat: '💬 聊天管理', cmd: '/newchat', desc: '新开一个空白聊天', args: null },
@@ -90,7 +100,7 @@
 
     { cat: '🖥 界面切换', cmd: '/bubble', desc: '切换为消息气泡模式', args: null },
     { cat: '🖥 界面切换', cmd: '/flat', desc: '切换为扁平消息模式', args: null },
-    { cat: '🖥 界面切换', cmd: '/single', desc: '切换为单行消息模式', args: null },
+    { cat: '🖥 界面切换', cmd: '/single', desc: '切换为单文档模式（隐藏头像与用户名）', args: null },
     { cat: '🖥 界面切换', cmd: '/panels', desc: '显示 / 隐藏 UI 面板', args: null },
     { cat: '🖥 界面切换', cmd: '/reload-page', desc: '刷新酒馆页面（未发送的输入内容会丢失！）', args: null },
   ];
@@ -232,9 +242,17 @@
      部分，导致面板底部（状态栏、手动命令框）被软键盘盖住。这里把可视高度写进 CSS 变量，
      面板的 max-height 跟着变，键盘弹起时自动收缩。 */
   try {
-    const vv = hostWin().visualViewport;
+    const win = hostWin();
+    const vv = win.visualViewport;
     if (vv) {
       const syncViewport = () => panel.style.setProperty('--cmdp-vvh', Math.round(vv.height) + 'px');
+      /* 监听挂在宿主窗口上，脚本重跑时上一份实例的监听不会随旧 iframe 消失；
+         先摘掉旧的再挂新的，避免每重跑一次就多叠一层 */
+      if (win.__cmdpVvhSync) {
+        vv.removeEventListener('resize', win.__cmdpVvhSync);
+        vv.removeEventListener('scroll', win.__cmdpVvhSync);
+      }
+      win.__cmdpVvhSync = syncViewport;
       syncViewport();
       vv.addEventListener('resize', syncViewport);
       vv.addEventListener('scroll', syncViewport);
@@ -336,7 +354,7 @@
       const val = (argInput?.value || '').trim();
       if (val) full = cmd + ' ' + quoteArg(val);
     }
-    if (btn.dataset.danger && !confirm(`确认执行 ${cmd}？该操作不可撤回！`)) return;
+    if (btn.dataset.danger && !confirm(`确认执行 ${full}？该操作不可撤回！`)) return;
     runCommand(full);
   });
 
@@ -460,6 +478,16 @@
       handle.addEventListener('pointerup', e => { stop(); try { handle.releasePointerCapture(e.pointerId); } catch (err) {} });
       handle.addEventListener('pointercancel', e => { stop(); try { handle.releasePointerCapture(e.pointerId); } catch (err) {} });
     } else {
+      /* 兜底监听里 mousemove/touchmove 挂在宿主 document 上，脚本重跑时不会随旧
+         iframe 消失；先按命名空间摘掉上一份实例的，再挂本实例的 */
+      const win = hostWin();
+      if (win.__cmdpDragCleanup) win.__cmdpDragCleanup();
+      const onMouseMove = e => move(e.clientX, e.clientY);
+      const onTouchMove = e => {
+        if (!dragging || e.touches.length !== 1) return;
+        move(e.touches[0].clientX, e.touches[0].clientY);
+        e.preventDefault();   // 拖动期间拦住页面滚动；touch-action 不被支持时靠这里兜底
+      };
       handle.addEventListener('mousedown', e => {
         if (e.button !== 0 || !canDrag(e.target)) return;
         begin(e.clientX, e.clientY);
@@ -469,15 +497,18 @@
         if (e.touches.length !== 1 || !canDrag(e.target)) return;
         begin(e.touches[0].clientX, e.touches[0].clientY);
       }, { passive: true });
-      doc.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+      doc.addEventListener('mousemove', onMouseMove);
       doc.addEventListener('mouseup', stop);
-      doc.addEventListener('touchmove', e => {
-        if (!dragging || e.touches.length !== 1) return;
-        move(e.touches[0].clientX, e.touches[0].clientY);
-        e.preventDefault();   // 拖动期间拦住页面滚动；touch-action 不被支持时靠这里兜底
-      }, { passive: false });
+      doc.addEventListener('touchmove', onTouchMove, { passive: false });
       doc.addEventListener('touchend', stop);
       doc.addEventListener('touchcancel', stop);
+      win.__cmdpDragCleanup = () => {
+        doc.removeEventListener('mousemove', onMouseMove);
+        doc.removeEventListener('mouseup', stop);
+        doc.removeEventListener('touchmove', onTouchMove);
+        doc.removeEventListener('touchend', stop);
+        doc.removeEventListener('touchcancel', stop);
+      };
     }
   }
   makeDraggable(panel, panel.querySelector('.cmdp-head'));
@@ -487,6 +518,5 @@
   appendInexistentScriptButtons([{ name: SCRIPT_BUTTON_NAME, visible: true }]);
   eventOn(getButtonEvent(SCRIPT_BUTTON_NAME), togglePanel);
 
-  renderList('');
-  setStatus(`待命中（${VERSION}）。点按钮直接执行；带输入框的命令可先填参数。`, '');
+  renderList('');   // 初始状态栏文案已随面板 HTML 一起写入，不必再 setStatus 一遍
 })().catch(e => console.error('[命令面板] 启动失败：', e));
