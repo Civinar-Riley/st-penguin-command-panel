@@ -1,10 +1,26 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>命令面板 · 本地验证台</title>
-<style>
+/* ============================================================================
+ * 命令面板本地验证台（共享骨架 + 酒馆助手接口桩 + 自检）
+ *
+ * 载入方式由 index.html 的查询参数决定，三种拓扑共用本文件：
+ *   mode=page    直接打开 index.html —— 本页搭骨架、跑脚本、跑自检
+ *   mode=iframe  父页：只搭骨架，并生成一个隐藏 iframe 指向 mode=runner
+ *   mode=runner  被测脚本所在 realm：往宿主文档注入面板，还原酒馆助手
+ *                「脚本跑在 iframe、面板注入 window.parent.document」的真实
+ *                拓扑，用来抓「该用宿主 document 却写成 document」这类跨文档错误
+ *
+ * 注意：接口桩必须挂在脚本所在 realm 的 window 上，界面与日志写进宿主文档，
+ * iframe 模式下两者不是同一个 document。
+ * ========================================================================== */
+(async () => {
+  const hostDoc = (() => { try { const d = window.parent.document; if (d && d.body) return d; } catch (e) {} return document; })();
+  const inIframe = hostDoc !== document;
+  const mode = new URLSearchParams(location.search).get('mode') || 'page';
+
+  /* ---------- 1. 宿主没有酒馆式骨架时补一个（iframe 模式下骨架已由父页建好） ---------- */
+  if (!hostDoc.getElementById('send_textarea')) {
+    const style = hostDoc.createElement('style');
+    style.id = 'harness-style';
+    style.textContent = `
   :root { --topBarBlockSize: 36px; }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; background:#0f1116; color:#ddd;
@@ -39,28 +55,11 @@
   #probe .pass { color:#6a9b7e; } #probe .fail { color:#c46a5e; } #probe .muted { color:#5c6170; }
   #probe button { background:#2a3040; color:#e2dfd7; border:1px solid #3a4256; border-radius:5px;
     padding:5px 10px; font:inherit; font-size:11.5px; cursor:pointer; margin-bottom:8px; }
-</style>
-</head>
-<body>
-<script>
-/* ============================================================================
- * 命令面板本地验证台
- *
- * 不启动酒馆、不装酒馆助手，用桩函数冒充它的接口，把面板跑起来并自检。
- * 两种用法：
- *   1) 直接打开本页 —— 页面自己搭一套酒馆式骨架（顶栏 / 聊天列 / 底部输入框）
- *   2) 由 _iframe_host.html 以 iframe 方式载入 —— 骨架由父页提供，
- *      脚本仍从 iframe 里往 window.parent.document 注入面板，还原真实拓扑
- *
- * 注意：酒馆助手接口桩必须挂在本页（脚本所在 realm）的 window 上，
- * 而界面与日志要写进宿主文档，两者在 iframe 模式下不是同一个 document。
- * ========================================================================== */
-(async () => {
-  const hostDoc = (() => { try { const d = window.parent.document; if (d && d.body) return d; } catch (e) {} return document; })();
-  const inIframe = hostDoc !== document;
+  /* 脚本真正运行的 iframe：真实拓扑下它是隐藏的，这里留一点可见面积便于观察 */
+  #runner { position:fixed; left:8px; bottom:118px; width:1px; height:1px; border:0; opacity:0; }
+`;
+    hostDoc.head.appendChild(style);
 
-  /* ---------- 1. 宿主没有酒馆式骨架时补一个 ---------- */
-  if (!hostDoc.getElementById('send_textarea')) {
     const wrap = hostDoc.createElement('div');
     wrap.innerHTML = `
       <div id="st-topbar"><span style="opacity:.55">☰</span><span style="opacity:.55">≡</span>
@@ -86,10 +85,20 @@
     while (wrap.firstChild) hostDoc.body.appendChild(wrap.firstChild);
   }
 
+  /* ---------- 2. 父页模式：搭好骨架即返回，被测脚本交给 runner iframe ---------- */
+  if (mode === 'iframe') {
+    const f = hostDoc.createElement('iframe');
+    f.id = 'runner';
+    f.src = 'index.html?mode=runner';
+    f.title = 'script runner';
+    hostDoc.body.appendChild(f);
+    return;
+  }
+
   const $ = id => hostDoc.getElementById(id);
   const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 
-  /* ---------- 2. 酒馆助手（JS-Slash-Runner）接口桩 ---------- */
+  /* ---------- 3. 酒馆助手（JS-Slash-Runner）接口桩 ---------- */
   const LOG = [];
   function log(text, kind) {
     LOG.push({ text, kind });
@@ -140,7 +149,7 @@
   window.__probe = probe;
   log('酒馆助手接口桩已就绪' + (inIframe ? '（iframe 模式：面板将注入父页）' : '（单页模式）'), 'muted');
 
-  /* ---------- 3. 载入被测脚本 ---------- */
+  /* ---------- 4. 载入被测脚本 ---------- */
   await new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = '../command_panel.js';
@@ -150,7 +159,7 @@
   });
   await new Promise(r => setTimeout(r, 900));   // 等脚本轮询接口并建好界面
 
-  /* ---------- 4. 自检 ---------- */
+  /* ---------- 5. 自检 ---------- */
   const ta = $('send_textarea');
   if (ta) {
     ta.addEventListener('input', () => { const m = $('probe-input'); if (m) m.textContent = ta.value || '（空）'; });
@@ -283,15 +292,18 @@
     $('probe-check').textContent = '运行中…';
     render(await window.__runSelfCheck());
   });
+  /* 后台标签页或布局未完成时视口宽会是 0，布局断言会拿到假数据；等到有尺寸再跑（上限 ~5s） */
+  for (let i = 0; i < 50 && !hostDoc.documentElement.clientWidth; i++) {
+    await new Promise(r => setTimeout(r, 100));
+  }
   render(await window.__runSelfCheck());
 
-  // iframe 模式下父页会等这个标记
+  // iframe 模式下父页与测试脚本可等待这个标记
   window.__harnessReady = true;
 })().catch(e => {
-  const box = document.getElementById('probe-check');
+  // 单页模式 probe 在本页；iframe 模式下 probe 在父页（跨文档访问按 hostDoc 的方式兜底）
+  let box = null;
+  try { box = document.getElementById('probe-check') || window.parent.document.getElementById('probe-check'); } catch (err) {}
   if (box) box.textContent = '验证台自身出错：' + e.message;
   console.error('[验证台]', e);
 });
-</script>
-</body>
-</html>
