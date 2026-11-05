@@ -1,0 +1,7 @@
+# 系统与编辑器产生的本地文件
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+.zcode/
