@@ -242,6 +242,11 @@
     add('含空格参数自动加引号', probe.slash()[0] === 'triggerSlash("/echo \\"hello world\\"")', probe.slash()[0]);
 
     probe.clear();
+    panel.querySelector('[data-argfor="/echo"]').value = 'a\\b c';
+    probe.btn('/echo').click(); await wait(160);
+    add('反斜杠不被翻倍', probe.slash()[0] === 'triggerSlash("/echo \\"a\\\\b c\\"")', probe.slash()[0]);
+
+    probe.clear();
     panel.querySelector('[data-argfor="/sendas"][data-field="name"]').value = '爱丽丝';
     panel.querySelector('[data-argfor="/sendas"][data-field="text"]').value = '你好';
     probe.btn('/sendas').click(); await wait(160);
