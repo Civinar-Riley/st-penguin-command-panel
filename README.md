@@ -203,6 +203,7 @@ st-penguin-command-panel/
 ├── .github/workflows/ci.yml                      # CI：语法检查 + 校验脚本包与源码一致
 ├── .gitattributes                                # 统一 LF（打包脚本要求源码无 CR）
 ├── .gitignore
+├── PITFALLS.md                                   # 维护者防踩坑清单
 ├── LICENSE                                       # CC BY-NC-SA 4.0 完整法律文本
 └── README.md                                     # 本文档
 ```
@@ -267,7 +268,7 @@ A：可以。仓库 [`tests/`](./tests/README.md) 里有一个本地验证台，
 
 > 版本号来自 `command_panel.js` 的 `VERSION` 常量与文件头的更新记录，两个脚本包的 `info` 字段与之同步。v1.0～v1.3 的提交都集中在 2026-08-26，因此不设日期列。
 >
-> **版本与发布**：仓库用 git tag 标记版本，顶部的版本徽章直接读取最新 tag。CDN 加载器指向 `@main`，因此**平时只要提交到 `main`，所有用加载器版的用户就会自动跟上**（受 jsDelivr 最长约 12 小时边缘缓存影响）；tag 的作用是留一个不可变的版本锚点，方便锁定或回看。发布流程：改 `VERSION` 与头部更新记录 → `node tools/build-bundle.mjs` → 提交推送 → 必要时 `git tag vX.Y && git push --tags`。
+> **版本与发布**：仓库用 git tag 标记版本，顶部的版本徽章直接读取最新 tag。CDN 加载器指向 `@main`，因此**平时只要提交到 `main`，所有用加载器版的用户就会自动跟上**（受 jsDelivr 最长约 12 小时边缘缓存影响）；tag 的作用是留一个不可变的版本锚点，方便锁定或回看。发布流程：改 `VERSION` 与头部更新记录 → `node tools/build-bundle.mjs` → 提交推送 → 必要时 `git tag vX.Y && git push --tags`；细节与坑见 [PITFALLS.md](./PITFALLS.md)。
 >
 > ⚠️ **tag 一旦推上去不要再移动**：jsDelivr 对 `@tag` 是按不可变资源缓存的（一年），移动 tag 只会让缓存与仓库长期不一致。真要修问题就发新 tag。
 >
