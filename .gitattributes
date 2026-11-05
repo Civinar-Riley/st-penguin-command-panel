@@ -1,0 +1,2 @@
+# 统一为 LF：tools/build-bundle.mjs 会拒绝含 CR 的源码，Windows 上开发也强制 LF
+* text=auto eol=lf
